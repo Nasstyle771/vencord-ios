@@ -12,6 +12,9 @@
             if (typeof window.__r === 'function') {
                 clearInterval(interval);
                 startPlugins();
+                if (window.Vencord.UI && window.Vencord.UI.Settings) {
+                    window.Vencord.UI.Settings.init();
+                }
             }
         }, 100);
 
