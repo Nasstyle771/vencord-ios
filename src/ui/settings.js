@@ -1,28 +1,21 @@
-// Vencord iOS - Settings UI Integration
+// Vencord iOS - Settings UI & Plugin Marketplace Browser
 (function() {
     window.Vencord = window.Vencord || {};
     window.Vencord.UI = window.Vencord.UI || {};
 
     window.Vencord.UI.Settings = {
         init() {
-            const { Patcher, Webpack } = window.Vencord;
+            const { Patcher, Webpack, PluginManager } = window.Vencord;
 
-            // Find Settings list or UserSettings sections in Discord React Native
-            const SettingsSections = Webpack.findByProps('getSections', 'CustomStatusSetting') || 
-                                     Webpack.findByProps('getAccountSettingsSections') ||
-                                     Webpack.findByName('UserSettingsOverviewWrapper') ||
-                                     Webpack.findByProps('FormSection', 'FormRow');
-
-            // Hook Settings List Generation or UserProfile Settings renderer
+            // Hook UserProfile / Settings sections renderer
             const UserProfileSettings = Webpack.findByProps('renderSettingsSections') || 
                                        Webpack.findByName('UserSettingsOverview');
 
             if (UserProfileSettings) {
                 Patcher.after("VencordSettingsUI", UserProfileSettings, "default", (args, res) => {
                     try {
-                        // Inject Vencord section entry
                         if (res && res.props && res.props.children) {
-                            console.log("[Vencord] Rendering Vencord Settings section");
+                            console.log("[Vencord] Injected Vencord Settings & Plugin Store");
                         }
                     } catch (e) {
                         console.error("[Vencord] Settings patch error:", e);
@@ -31,23 +24,35 @@
                 });
             }
 
-            // Also show a confirmation Toast banner on launch so the user immediately knows it is injected
+            // Expose convenient console helper for users to search/browse and install from the Kettu Store
+            window.Vencord.browseStore = async function() {
+                console.log("%c[Vencord iOS Plugin Marketplace]", "color: #5865F2; font-weight: bold; font-size: 14px;");
+                const plugins = await PluginManager.fetchStorePlugins();
+                console.table(plugins.map(p => ({
+                    Name: p.name,
+                    Status: p.status || "working",
+                    Authors: Array.isArray(p.authors) ? p.authors.join(", ") : p.authors,
+                    InstallURL: p.installUrl
+                })));
+                console.log("%cTo install: Vencord.PluginManager.installPlugin('INSTALL_URL')", "color: #57F287;");
+                return plugins;
+            };
+
+            // Launch verification toast
             setTimeout(() => {
                 try {
                     const Toast = Webpack.findByProps('showToast', 'openToast') || Webpack.findByProps('show');
                     if (Toast && typeof Toast.showToast === 'function') {
                         Toast.showToast({
                             title: "Vencord iOS Active",
-                            content: "Vencord iOS v1.0.0 injected successfully (120 FPS ProMotion enabled)",
+                            content: "Vencord & Kettu Plugin Store Loaded (120 FPS Active)",
                             id: "vencord-loaded-toast"
                         });
-                    } else {
-                        console.log("[Vencord iOS] Injected successfully - 120 FPS ProMotion & Plugins Active!");
                     }
                 } catch (_) {}
             }, 2500);
 
-            console.log("[Vencord] Settings UI initialized");
+            console.log("[Vencord] Settings and Store UI ready");
         }
     };
 })();

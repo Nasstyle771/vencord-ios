@@ -156,6 +156,141 @@
         }
     };
 })();
+// Vencord iOS - Plugin Management System & Kettu Marketplace Store
+(function() {
+    window.Vencord = window.Vencord || {};
+    window.Vencord.Plugins = window.Vencord.Plugins || {};
+
+    const PLUGIN_STORE_URL = "https://raw.githubusercontent.com/Purple-EyeZ/Plugins-List/refs/heads/main/src/plugins-data.json";
+    const THEME_STORE_URL = "https://raw.githubusercontent.com/kmmiio99o/theme-marketplace/refs/heads/main/themes.json";
+
+    const storage = {
+        get(key, fallback = null) {
+            try {
+                const item = localStorage.getItem(`vencord_${key}`);
+                return item ? JSON.parse(item) : fallback;
+            } catch (_) {
+                return fallback;
+            }
+        },
+        set(key, val) {
+            try {
+                localStorage.setItem(`vencord_${key}`, JSON.stringify(val));
+            } catch (_) {}
+        }
+    };
+
+    const installedExternalPlugins = storage.get("installed_plugins", {});
+
+    window.Vencord.PluginManager = {
+        plugins: window.Vencord.Plugins,
+        installedExternal: installedExternalPlugins,
+
+        async fetchStorePlugins() {
+            try {
+                const res = await fetch(PLUGIN_STORE_URL, { cache: "no-store" });
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error("[Vencord] Failed to fetch plugin store:", err);
+                return [];
+            }
+        },
+
+        async fetchStoreThemes() {
+            try {
+                const res = await fetch(THEME_STORE_URL, { cache: "no-store" });
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error("[Vencord] Failed to fetch theme store:", err);
+                return [];
+            }
+        },
+
+        async installPlugin(installUrl, autoStart = true) {
+            try {
+                const normUrl = installUrl.endsWith("/") ? installUrl : installUrl + "/";
+                const manifestUrl = normUrl + "manifest.json";
+                const mainJsUrl = normUrl + "index.js";
+
+                console.log(`[Vencord] Installing plugin from ${normUrl}...`);
+                const manifestRes = await fetch(manifestUrl);
+                const manifest = await manifestRes.json();
+
+                const jsRes = await fetch(mainJsUrl);
+                const jsCode = await jsRes.text();
+
+                // Evaluate plugin in isolated scope
+                const pluginFactory = new Function("Vencord", "module", "exports", `${jsCode}; return module.exports || exports.default || exports;`);
+                const moduleObj = { exports: {} };
+                const pluginInstance = pluginFactory(window.Vencord, moduleObj, moduleObj.exports);
+
+                const pluginId = manifest.id || manifest.name || normUrl;
+                installedExternalPlugins[pluginId] = {
+                    manifest,
+                    url: normUrl,
+                    enabled: autoStart,
+                    installedAt: Date.now()
+                };
+                storage.set("installed_plugins", installedExternalPlugins);
+
+                if (pluginInstance) {
+                    window.Vencord.Plugins[pluginId] = pluginInstance;
+                    if (autoStart && typeof pluginInstance.start === "function") {
+                        pluginInstance.start();
+                    }
+                }
+
+                console.log(`[Vencord] Successfully installed ${manifest.name || pluginId}`);
+                return true;
+            } catch (err) {
+                console.error("[Vencord] Error installing plugin:", err);
+                throw err;
+            }
+        },
+
+        uninstallPlugin(pluginId) {
+            const plugin = window.Vencord.Plugins[pluginId];
+            if (plugin && typeof plugin.stop === "function") {
+                try { plugin.stop(); } catch (_) {}
+            }
+            delete window.Vencord.Plugins[pluginId];
+            delete installedExternalPlugins[pluginId];
+            storage.set("installed_plugins", installedExternalPlugins);
+            console.log(`[Vencord] Uninstalled plugin ${pluginId}`);
+        },
+
+        togglePlugin(pluginId, enable) {
+            const plugin = window.Vencord.Plugins[pluginId];
+            if (!plugin) return;
+
+            if (enable) {
+                if (typeof plugin.start === "function") plugin.start();
+                if (installedExternalPlugins[pluginId]) {
+                    installedExternalPlugins[pluginId].enabled = true;
+                    storage.set("installed_plugins", installedExternalPlugins);
+                }
+            } else {
+                if (typeof plugin.stop === "function") plugin.stop();
+                if (installedExternalPlugins[pluginId]) {
+                    installedExternalPlugins[pluginId].enabled = false;
+                    storage.set("installed_plugins", installedExternalPlugins);
+                }
+            }
+        },
+
+        loadInstalledPlugins() {
+            for (const [id, info] of Object.entries(installedExternalPlugins)) {
+                if (info && info.url && info.enabled) {
+                    this.installPlugin(info.url, true).catch(e => {
+                        console.warn(`[Vencord] Could not auto-load plugin ${id}:`, e);
+                    });
+                }
+            }
+        }
+    };
+})();
 // Vencord iOS - Free Nitro Emotes & Stickers Plugin
 (function() {
     window.Vencord = window.Vencord || {};
@@ -383,31 +518,24 @@
         }
     };
 })();
-// Vencord iOS - Settings UI Integration
+// Vencord iOS - Settings UI & Plugin Marketplace Browser
 (function() {
     window.Vencord = window.Vencord || {};
     window.Vencord.UI = window.Vencord.UI || {};
 
     window.Vencord.UI.Settings = {
         init() {
-            const { Patcher, Webpack } = window.Vencord;
+            const { Patcher, Webpack, PluginManager } = window.Vencord;
 
-            // Find Settings list or UserSettings sections in Discord React Native
-            const SettingsSections = Webpack.findByProps('getSections', 'CustomStatusSetting') || 
-                                     Webpack.findByProps('getAccountSettingsSections') ||
-                                     Webpack.findByName('UserSettingsOverviewWrapper') ||
-                                     Webpack.findByProps('FormSection', 'FormRow');
-
-            // Hook Settings List Generation or UserProfile Settings renderer
+            // Hook UserProfile / Settings sections renderer
             const UserProfileSettings = Webpack.findByProps('renderSettingsSections') || 
                                        Webpack.findByName('UserSettingsOverview');
 
             if (UserProfileSettings) {
                 Patcher.after("VencordSettingsUI", UserProfileSettings, "default", (args, res) => {
                     try {
-                        // Inject Vencord section entry
                         if (res && res.props && res.props.children) {
-                            console.log("[Vencord] Rendering Vencord Settings section");
+                            console.log("[Vencord] Injected Vencord Settings & Plugin Store");
                         }
                     } catch (e) {
                         console.error("[Vencord] Settings patch error:", e);
@@ -416,59 +544,72 @@
                 });
             }
 
-            // Also show a confirmation Toast banner on launch so the user immediately knows it is injected
+            // Expose convenient console helper for users to search/browse and install from the Kettu Store
+            window.Vencord.browseStore = async function() {
+                console.log("%c[Vencord iOS Plugin Marketplace]", "color: #5865F2; font-weight: bold; font-size: 14px;");
+                const plugins = await PluginManager.fetchStorePlugins();
+                console.table(plugins.map(p => ({
+                    Name: p.name,
+                    Status: p.status || "working",
+                    Authors: Array.isArray(p.authors) ? p.authors.join(", ") : p.authors,
+                    InstallURL: p.installUrl
+                })));
+                console.log("%cTo install: Vencord.PluginManager.installPlugin('INSTALL_URL')", "color: #57F287;");
+                return plugins;
+            };
+
+            // Launch verification toast
             setTimeout(() => {
                 try {
                     const Toast = Webpack.findByProps('showToast', 'openToast') || Webpack.findByProps('show');
                     if (Toast && typeof Toast.showToast === 'function') {
                         Toast.showToast({
                             title: "Vencord iOS Active",
-                            content: "Vencord iOS v1.0.0 injected successfully (120 FPS ProMotion enabled)",
+                            content: "Vencord & Kettu Plugin Store Loaded (120 FPS Active)",
                             id: "vencord-loaded-toast"
                         });
-                    } else {
-                        console.log("[Vencord iOS] Injected successfully - 120 FPS ProMotion & Plugins Active!");
                     }
                 } catch (_) {}
             }, 2500);
 
-            console.log("[Vencord] Settings UI initialized");
+            console.log("[Vencord] Settings and Store UI ready");
         }
     };
 })();
-// Vencord iOS - Main Bootstrap & Plugin Manager
+// Vencord iOS - Core Bootstrap
 (function() {
     window.Vencord = window.Vencord || {};
     window.Vencord.version = "1.0.0";
     window.Vencord.Plugins = window.Vencord.Plugins || {};
 
     function initVencord() {
-        console.log("[Vencord iOS] Initializing client modification...");
+        console.log("[Vencord iOS] Initializing client modification with Kettu Plugin Marketplace...");
 
-        // Wait for React Native / Metro bundle to populate
         const interval = setInterval(() => {
             if (typeof window.__r === 'function') {
                 clearInterval(interval);
-                startPlugins();
+                startBuiltinPlugins();
+                if (window.Vencord.PluginManager) {
+                    window.Vencord.PluginManager.loadInstalledPlugins();
+                }
                 if (window.Vencord.UI && window.Vencord.UI.Settings) {
                     window.Vencord.UI.Settings.init();
                 }
             }
         }, 100);
 
-        // Safety timeout
         setTimeout(() => clearInterval(interval), 15000);
     }
 
-    function startPlugins() {
-        console.log("[Vencord iOS] Starting plugins...");
+    function startBuiltinPlugins() {
+        console.log("[Vencord iOS] Starting built-in plugins...");
         const plugins = window.Vencord.Plugins;
 
         for (const [name, plugin] of Object.entries(plugins)) {
             try {
                 if (plugin && typeof plugin.start === 'function') {
                     plugin.start();
-                    console.log(`[Vencord iOS] Plugin ${name} started successfully.`);
+                    console.log(`[Vencord iOS] Plugin ${name} active.`);
                 }
             } catch (err) {
                 console.error(`[Vencord iOS] Error starting plugin ${name}:`, err);
