@@ -14,38 +14,39 @@ concurrency:
 jobs:
   build:
     name: Build Tweak (${{ matrix.scheme }})
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        scheme: [rootless, roothide]
+        include:
+          - scheme: rootless
+          - scheme: roothide
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      CI: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Theos
+      - name: Cache Theos
+        id: cache-theos
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}
-          restore-keys: theos-${{ runner.os }}-
+          path: ${{ github.workspace }}/.theos
+          key: roothide-theos-${{ runner.os }}-v1
 
-      - name: Install Theos
-        run: |
-          if [ ! -d "${{ github.workspace }}/theos" ]; then
-            git clone --recursive https://github.com/theos/theos.git ${{ github.workspace }}/theos
-          fi
-          curl -fsSL https://raw.githubusercontent.com/theos/sdks/master/iPhoneOS16.5.sdk.tar.xz | tar -xJ -C ${{ github.workspace }}/theos/sdks/ || true
+      - name: Setup Theos
+        if: steps.cache-theos.outputs.cache-hit != 'true'
+        run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Package
         run: |
-          export THEOS=${{ github.workspace }}/theos
-          if [ "${{ matrix.scheme }}" = "roothide" ]; then
-            make clean
-            FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide make package
-          else
-            make clean
-            FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless make package
-          fi
+          make clean
+          make package FINALPACKAGE=1 \
+            THEOS_PACKAGE_SCHEME="${{ matrix.scheme }}" \
+            DISABLE_ROOTLESS_COMPAT_WARNING=1
 
       - name: Upload Package Artifact
         uses: actions/upload-artifact@v4
@@ -53,40 +54,39 @@ jobs:
           name: VencordIOS-deb-${{ matrix.scheme }}
           path: packages/*.deb
 
-  package_ipa:
-    name: Package Discord IPA
+  package_dylib:
+    name: Package Tweak Dylib
     needs: build
-    runs-on: macos-14
+    runs-on: ubuntu-latest
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      CI: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Theos
+      - name: Cache Theos
+        id: cache-theos
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          path: ${{ github.workspace }}/.theos
+          key: roothide-theos-${{ runner.os }}-v1
 
-      - name: Install Dependencies & Azule
-        run: |
-          if [ ! -d "${{ github.workspace }}/theos" ]; then
-            git clone --recursive https://github.com/theos/theos.git ${{ github.workspace }}/theos
-          fi
-          curl -fsSL https://raw.githubusercontent.com/theos/sdks/master/iPhoneOS16.5.sdk.tar.xz | tar -xJ -C ${{ github.workspace }}/theos/sdks/ || true
-          brew install ldid
-          git clone https://github.com/Al4ise/Azule /tmp/Azule
-          sudo ln -sf /tmp/Azule/azule /usr/local/bin/azule
+      - name: Setup Theos
+        if: steps.cache-theos.outputs.cache-hit != 'true'
+        run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Tweak Dylib
         run: |
-          export THEOS=${{ github.workspace }}/theos
           make clean
           FINALPACKAGE=1 make
           mkdir -p output_dylib
-          cp .theos/obj/debug/VencordIOS.dylib output_dylib/ || cp .theos/obj/VencordIOS.dylib output_dylib/ || cp $(find .theos -name "VencordIOS.dylib" | head -n 1) output_dylib/
+          find .theos/obj -name "*.dylib" -exec cp {} output_dylib/ \; || true
 
       - name: Upload Dylib Artifact
         uses: actions/upload-artifact@v4
         with:
           name: VencordIOS-Dylib
-          path: output_dylib/VencordIOS.dylib
+          path: output_dylib/*.dylib
