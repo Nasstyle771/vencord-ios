@@ -10,8 +10,6 @@ static IMP OriginalLoadBundleAtURL;
 typedef void (^RCTSourceLoadProgressBlock)(NSUInteger done, NSUInteger total);
 typedef void (^RCTSourceLoadBlock)(NSError *error, id source);
 
-extern NSString * const VencordEmbeddedBundleJS;
-
 NSString *VencordGetBundledScript(void) {
     return VencordEmbeddedBundleJS ?: @"";
 }

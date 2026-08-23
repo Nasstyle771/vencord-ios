@@ -10,6 +10,7 @@ FOUNDATION_EXPORT NSString * const VencordNitroEmotesKey;
 FOUNDATION_EXPORT NSString * const VencordMessageLoggerKey;
 FOUNDATION_EXPORT NSString * const VencordSilentTypingKey;
 FOUNDATION_EXPORT NSString * const VencordNoReadReceiptsKey;
+FOUNDATION_EXPORT NSString * const VencordEmbeddedBundleJS;
 
 BOOL VencordFeatureEnabled(NSString *key);
 void VencordSetFeatureEnabled(NSString *key, BOOL enabled);

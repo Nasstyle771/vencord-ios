@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "VencordIOS.h"
 
 NSString * const VencordEmbeddedBundleJS = @"(function(){\n"
     "// Vencord iOS - Patcher API\n"
