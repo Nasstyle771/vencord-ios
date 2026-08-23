@@ -1,0 +1,92 @@
+name: Vencord iOS CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Tweak (${{ matrix.scheme }})
+    runs-on: macos-14
+    strategy:
+      matrix:
+        scheme: [rootless, roothide]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          restore-keys: theos-${{ runner.os }}-
+
+      - name: Install Theos
+        run: |
+          if [ ! -d "${{ github.workspace }}/theos" ]; then
+            git clone --recursive https://github.com/theos/theos.git ${{ github.workspace }}/theos
+          fi
+          curl -fsSL https://raw.githubusercontent.com/theos/sdks/master/iPhoneOS16.5.sdk.tar.xz | tar -xJ -C ${{ github.workspace }}/theos/sdks/ || true
+
+      - name: Build Package
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          if [ "${{ matrix.scheme }}" = "roothide" ]; then
+            make clean
+            FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide make package
+          else
+            make clean
+            FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless make package
+          fi
+
+      - name: Upload Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VencordIOS-deb-${{ matrix.scheme }}
+          path: packages/*.deb
+
+  package_ipa:
+    name: Package Discord IPA
+    needs: build
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - name: Install Dependencies & Azule
+        run: |
+          if [ ! -d "${{ github.workspace }}/theos" ]; then
+            git clone --recursive https://github.com/theos/theos.git ${{ github.workspace }}/theos
+          fi
+          curl -fsSL https://raw.githubusercontent.com/theos/sdks/master/iPhoneOS16.5.sdk.tar.xz | tar -xJ -C ${{ github.workspace }}/theos/sdks/ || true
+          brew install ldid
+          git clone https://github.com/Al4ise/Azule /tmp/Azule
+          sudo ln -sf /tmp/Azule/azule /usr/local/bin/azule
+
+      - name: Build Tweak Dylib
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          make clean
+          FINALPACKAGE=1 make
+          mkdir -p output_dylib
+          cp .theos/obj/debug/VencordIOS.dylib output_dylib/ || cp .theos/obj/VencordIOS.dylib output_dylib/ || cp $(find .theos -name "VencordIOS.dylib" | head -n 1) output_dylib/
+
+      - name: Upload Dylib Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VencordIOS-Dylib
+          path: output_dylib/VencordIOS.dylib

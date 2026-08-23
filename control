@@ -1,0 +1,9 @@
+Package: com.vencord.ios
+Name: Vencord iOS
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Vencord-like client mod for Discord on iOS with Adaptive 120 FPS ProMotion, Free Nitro Emotes, Message Logger, Ghost Mode, and OLED Pure Black.
+Maintainer: Vencord iOS Team
+Author: Vencord iOS Team
+Section: Tweaks
+Depends: mobilesubstrate

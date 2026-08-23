@@ -1,0 +1,15 @@
+#import <Foundation/Foundation.h>
+
+FOUNDATION_EXPORT NSString * const VencordMasterEnabledKey;
+FOUNDATION_EXPORT NSString * const VencordForce120HzKey;
+FOUNDATION_EXPORT NSString * const VencordOLEDThemeKey;
+FOUNDATION_EXPORT NSString * const VencordNitroEmotesKey;
+FOUNDATION_EXPORT NSString * const VencordMessageLoggerKey;
+FOUNDATION_EXPORT NSString * const VencordSilentTypingKey;
+FOUNDATION_EXPORT NSString * const VencordNoReadReceiptsKey;
+FOUNDATION_EXPORT NSString * const VencordPreferencesDidChangeNotification;
+
+void VencordRegisterDefaults(void);
+id VencordPreferenceObject(NSString *key);
+BOOL VencordFeatureEnabled(NSString *key);
+void VencordSetFeatureEnabled(NSString *key, BOOL enabled);
